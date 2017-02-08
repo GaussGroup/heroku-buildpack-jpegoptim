@@ -1,0 +1,53 @@
+#!/bin/sh
+set -e
+
+indent() {
+  sed -u 's/^/       /'
+}
+
+arrow() {
+  sed -u 's/^/-----> /'
+}
+
+# Check for and clear jpegoptim binaries created by the Apt buildpack
+if [ -e /app/.apt/usr/bin/jpegoptim ]; then
+  echo "Clearing apt-installed jpegoptim" | indent
+  rm /app/.apt/usr/bin/jpegoptim
+fi
+
+BUILD_DIR=$1
+CACHE_DIR=$2
+VENDOR_DIR="vendor"
+JPEGOPTIM_DOWNLOAD_URL="https://github.com/tjko/jpegoptim/archive/RELEASE.1.4.4.tar.gz"
+JPEGOPTIM_CACHE_DIR="$CACHE_DIR/jpegoptim-cache"
+
+if [ -x "$JPEGOPTIM_CACHE_DIR/jpegoptim" ]; then
+  echo "Using cached jpegoptim binary" | arrow
+  mkdir -p $BUILD_DIR/$VENDOR_DIR/jpegoptim/bin
+  cp $JPEGOPTIM_CACHE_DIR/jpegoptim $BUILD_DIR/$VENDOR_DIR/jpegoptim/bin
+else
+  echo "Building jpegoptim from source" | arrow
+  echo "JPEGOPTIM_DOWNLOAD_URL = " $JPEGOPTIM_DOWNLOAD_URL | indent
+
+  cd $BUILD_DIR
+  curl -L --silent $JPEGOPTIM_DOWNLOAD_URL | tar -xzv | indent
+  cd jpegoptim-RELEASE.1.4.4
+  ./configure | indent
+  make | indent
+  chmod +x jpegoptim
+
+  mkdir -p $BUILD_DIR/$VENDOR_DIR/jpegoptim/bin
+  cp jpegoptim $BUILD_DIR/$VENDOR_DIR/jpegoptim/bin/jpegoptim
+
+  # Store binary in cache to speedup future builds
+  mkdir -p $JPEGOPTIM_CACHE_DIR
+  cp jpegoptim $JPEGOPTIM_CACHE_DIR
+fi
+
+echo "Testing jpegoptim binary" | arrow
+$BUILD_DIR/$VENDOR_DIR/jpegoptim/bin/jpegoptim -V | indent
+
+echo "Modifying PATH" | arrow
+PROFILE_PATH="$BUILD_DIR/.profile.d/jpegoptim.sh"
+mkdir -p $(dirname $PROFILE_PATH)
+echo 'export PATH="$PATH:/app/vendor/jpegoptim/bin"' >> $PROFILE_PATH
